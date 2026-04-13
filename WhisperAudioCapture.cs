@@ -61,6 +61,11 @@ namespace MusicPlayer
 
         public void Start()
         {
+            Start(enablePeriodicExports: true);
+        }
+
+        public void Start(bool enablePeriodicExports)
+        {
             Stop();
 
             string debugDir = Path.Combine(Path.GetTempPath(), "GMA", "whisper_debug");
@@ -78,13 +83,16 @@ namespace MusicPlayer
             _waveIn.RecordingStopped += OnRecordingStopped;
             _waveIn.StartRecording();
 
-            int firstDueMs = Math.Max(1600, StepMilliseconds);
+            if (enablePeriodicExports)
+            {
+                int firstDueMs = Math.Max(1600, StepMilliseconds);
 
-            _exportTimer = new Timer(
-                _ => ExportCurrentWindow(),
-                null,
-                firstDueMs,
-                StepMilliseconds);
+                _exportTimer = new Timer(
+                    _ => ExportCurrentWindow(),
+                    null,
+                    firstDueMs,
+                    StepMilliseconds);
+            }
         }
 
         public void Stop()

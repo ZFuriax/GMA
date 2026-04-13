@@ -43,8 +43,8 @@ namespace MusicPlayer
             // Always same tooltip
             RepeatButton.ToolTip = "Repeat One";
 
-            // Highlight only when enabled
-            SetGreenHighlight(RepeatButton, repeatOne);
+            // Let the ToggleButton style control the highlight
+            RepeatButton.IsChecked = repeatOne;
         }
 
         private int? DetermineNextTrackIndexForPlayingPlaylist(bool wrap)

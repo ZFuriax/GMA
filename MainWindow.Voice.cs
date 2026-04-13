@@ -19,10 +19,9 @@ namespace MusicPlayer
     {
         // ---------- Voice triggers ----------
         private readonly VoiceTriggerService _voiceTriggerService = new();
-        private readonly DispatcherTimer _ctrlPollTimer = new();
         private DateTime _lastCtrlDownUtc = DateTime.MinValue;
         private DateTime _lastWhisperArmedUtc = DateTime.MinValue;
-        private bool _ctrlWasDownLastTick;
+        private bool _ctrlSegmentActive;
         private const int CtrlPhraseGraceMs = 4000;
 
         private enum VoiceCaptureMode
@@ -38,6 +37,9 @@ namespace MusicPlayer
         private const string GlyphMic = "\uE720";
 
         private readonly Dictionary<string, int> _voiceCanonicalToPlaylist =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        private readonly Dictionary<string, int> _voiceCanonicalToScene =
             new(StringComparer.OrdinalIgnoreCase);
 
         private static string NormalizeLoadedAliasGroup(string? text)
@@ -157,9 +159,13 @@ namespace MusicPlayer
         {
             _voiceCaptureMode = _voiceCaptureMode switch
             {
-                VoiceCaptureMode.Off => VoiceCaptureMode.On,
-                VoiceCaptureMode.On => VoiceCaptureMode.CtrlActivated,
+                //VoiceCaptureMode.Off => VoiceCaptureMode.On,
+                //VoiceCaptureMode.On => VoiceCaptureMode.CtrlActivated,
+                //_ => VoiceCaptureMode.Off
+
+                VoiceCaptureMode.Off => VoiceCaptureMode.CtrlActivated,
                 _ => VoiceCaptureMode.Off
+
             };
 
             ApplyVoiceCaptureMode();
@@ -167,25 +173,26 @@ namespace MusicPlayer
 
         private void ApplyVoiceCaptureMode()
         {
-            _ctrlPollTimer.Stop();
-            _ctrlPollTimer.Tick -= CtrlPollTimer_Tick;
+            PreviewKeyDown -= VoiceCaptureCtrl_PreviewKeyDown;
+            PreviewKeyUp -= VoiceCaptureCtrl_PreviewKeyUp;
+            Deactivated -= VoiceCaptureCtrl_WindowDeactivated;
 
             if (_voiceCaptureMode == VoiceCaptureMode.Off)
             {
                 try { _voiceTriggerService.Stop(); } catch { }
-                _ctrlWasDownLastTick = false;
+                _ctrlSegmentActive = false;
             }
             else
             {
                 if (_voiceCaptureMode == VoiceCaptureMode.CtrlActivated)
                 {
-                    _lastCtrlDownUtc = DateTime.UtcNow;
-                    _lastWhisperArmedUtc = DateTime.UtcNow;
-                    _ctrlWasDownLastTick = false;
+                    _lastCtrlDownUtc = DateTime.MinValue;
+                    _lastWhisperArmedUtc = DateTime.MinValue;
+                    _ctrlSegmentActive = false;
 
-                    _ctrlPollTimer.Interval = TimeSpan.FromMilliseconds(25);
-                    _ctrlPollTimer.Tick += CtrlPollTimer_Tick;
-                    _ctrlPollTimer.Start();
+                    PreviewKeyDown += VoiceCaptureCtrl_PreviewKeyDown;
+                    PreviewKeyUp += VoiceCaptureCtrl_PreviewKeyUp;
+                    Deactivated += VoiceCaptureCtrl_WindowDeactivated;
                 }
 
                 RefreshVoiceCaptureState(showErrors: true);
@@ -195,29 +202,58 @@ namespace MusicPlayer
             RequestSaveState();
         }
 
-        private void CtrlPollTimer_Tick(object? sender, EventArgs e)
+        private static bool IsCtrlKey(Key key)
         {
-            bool ctrlDown = IsCtrlDownNow();
+            return key == Key.LeftCtrl || key == Key.RightCtrl;
+        }
 
-            if (ctrlDown)
-                _lastCtrlDownUtc = DateTime.UtcNow;
+        private void VoiceCaptureCtrl_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (_voiceCaptureMode != VoiceCaptureMode.CtrlActivated)
+                return;
 
-            if (_voiceCaptureMode == VoiceCaptureMode.CtrlActivated)
-            {
-                if (ctrlDown && !_ctrlWasDownLastTick)
-                {
-                    _voiceTriggerService.BeginManualSegment();
-                    _lastWhisperArmedUtc = DateTime.UtcNow;
-                }
-                else if (!ctrlDown && _ctrlWasDownLastTick)
-                {
-                    bool exported = _voiceTriggerService.EndManualSegmentAndExport();
-                    if (exported)
-                        _lastWhisperArmedUtc = DateTime.UtcNow;
-                }
-            }
+            if (!IsCtrlKey(e.Key))
+                return;
 
-            _ctrlWasDownLastTick = ctrlDown;
+            _lastCtrlDownUtc = DateTime.UtcNow;
+
+            if (_ctrlSegmentActive || e.IsRepeat)
+                return;
+
+            _voiceTriggerService.BeginManualSegment();
+            _lastWhisperArmedUtc = DateTime.UtcNow;
+            _ctrlSegmentActive = true;
+        }
+
+        private void VoiceCaptureCtrl_PreviewKeyUp(object sender, KeyEventArgs e)
+        {
+            if (_voiceCaptureMode != VoiceCaptureMode.CtrlActivated)
+                return;
+
+            if (!IsCtrlKey(e.Key))
+                return;
+
+            EndCtrlActivatedManualSegment();
+        }
+
+        private void VoiceCaptureCtrl_WindowDeactivated(object? sender, EventArgs e)
+        {
+            if (_voiceCaptureMode != VoiceCaptureMode.CtrlActivated)
+                return;
+
+            EndCtrlActivatedManualSegment();
+        }
+
+        private void EndCtrlActivatedManualSegment()
+        {
+            if (!_ctrlSegmentActive)
+                return;
+
+            bool exported = _voiceTriggerService.EndManualSegmentAndExport();
+            if (exported)
+                _lastWhisperArmedUtc = DateTime.UtcNow;
+
+            _ctrlSegmentActive = false;
         }
 
         private void UpdateVoiceCaptureButtonVisuals()
@@ -252,7 +288,7 @@ namespace MusicPlayer
                             new LineBreak(),
                             new Run("phrase to be set up for the given playlist by clicking that playlist tab's microphone button."),
                             new LineBreak(),
-                            new Run("Modes: Off (disabled), On (always listening), Ctrl (active while Ctrl is held) - Recommended.")
+                            new Run("Modes: Off (disabled), Ctrl (active while Ctrl is held).")
                         }
                     };
                     SetGreenHighlight(VoiceCaptureToggle, false);
@@ -274,7 +310,7 @@ namespace MusicPlayer
                             new LineBreak(),
                             new Run("phrase to be set up for the given playlist by clicking that playlist tab's microphone button."),
                             new LineBreak(),
-                            new Run("Modes: Off (disabled), On (always listening), Ctrl (active while Ctrl is held) - Recommended.")
+                            new Run("Modes: Off (disabled), Ctrl (active while Ctrl is held).")
                         }
                     };
                     SetGreenHighlight(VoiceCaptureToggle, true);
@@ -299,7 +335,7 @@ namespace MusicPlayer
                             new LineBreak(),
                             new Run("phrase to be set up for the given playlist by clicking that playlist tab's microphone button."),
                             new LineBreak(),
-                            new Run("Modes: Off (disabled), On (always listening), Ctrl (active while Ctrl is held) - Recommended.")
+                            new Run("Modes: Off (disabled), Ctrl (active while Ctrl is held).")
                         }
                     };
                     SetGreenHighlight(VoiceCaptureToggle, true);
@@ -312,6 +348,7 @@ namespace MusicPlayer
             EnsureWhisperDefaults();
 
             _voiceCanonicalToPlaylist.Clear();
+            _voiceCanonicalToScene.Clear();
 
             var phraseGroups = new List<VoicePhraseGroup>();
 
@@ -335,6 +372,22 @@ namespace MusicPlayer
                 }
             }
 
+            foreach (var entry in _scenes.Select((sc, i) => new { Scene = sc, Index = i }))
+            {
+                string normalized = VoiceTriggerService.NormalizePhrase(entry.Scene.KeyPhrase);
+                if (string.IsNullOrWhiteSpace(normalized))
+                    continue;
+
+                if (_voiceCanonicalToPlaylist.ContainsKey(normalized))
+                    continue;
+
+                if (_voiceCanonicalToScene.ContainsKey(normalized))
+                    continue;
+
+                _voiceCanonicalToScene[normalized] = entry.Index;
+                phraseGroups.Add(new VoicePhraseGroup(normalized, new[] { normalized }));
+            }
+
             try { _voiceTriggerService.Stop(); } catch { }
 
             if (_voiceCaptureMode == VoiceCaptureMode.Off)
@@ -347,6 +400,18 @@ namespace MusicPlayer
             {
                 UpdateVoiceCaptureButtonVisuals();
                 return;
+            }
+
+            _voiceTriggerService.CaptureOnlyMode =
+                _voiceCaptureMode == VoiceCaptureMode.CtrlActivated;
+
+            _voiceTriggerService.ResetConfidenceThresholdsToDefaults();
+
+            if (_voiceCaptureMode == VoiceCaptureMode.CtrlActivated)
+            {
+                _voiceTriggerService.MinOverallConfidence = 0.62f;
+                _voiceTriggerService.MinAcceptanceScore = 0.72f;
+                _voiceTriggerService.MinBestPhraseSimilarity = 0.68;
             }
 
             if (!_voiceTriggerService.TryStart(phraseGroups, out var error))
@@ -426,27 +491,35 @@ namespace MusicPlayer
             if (string.IsNullOrWhiteSpace(normalizedPhrase))
                 return;
 
-            if (!_voiceCanonicalToPlaylist.TryGetValue(normalizedPhrase, out int playlistIndex))
+            if (_voiceCanonicalToPlaylist.TryGetValue(normalizedPhrase, out int playlistIndex))
+            {
+                if (playlistIndex < 0 || playlistIndex >= _playlists.Count)
+                    return;
+
+                var playlist = _playlists[playlistIndex];
+                if (!PlaylistHasAnyVoicePhrases(playlist) || playlist.Tracks.Count == 0)
+                    return;
+
+                int cooldownMs = playlist.VoiceTriggerCooldownMs > 0
+                    ? playlist.VoiceTriggerCooldownMs
+                    : DefaultVoiceTriggerCooldownMs;
+
+                var now = DateTime.UtcNow;
+                if ((now - playlist.VoiceTriggerLastFireUtc).TotalMilliseconds < cooldownMs)
+                    return;
+
+                playlist.VoiceTriggerLastFireUtc = now;
+                PlayVoiceTriggeredTrack(playlistIndex);
                 return;
+            }
 
-            if (playlistIndex < 0 || playlistIndex >= _playlists.Count)
-                return;
+            if (_voiceCanonicalToScene.TryGetValue(normalizedPhrase, out int sceneIndex))
+            {
+                if (sceneIndex < 0 || sceneIndex >= _scenes.Count)
+                    return;
 
-            var playlist = _playlists[playlistIndex];
-            if (!PlaylistHasAnyVoicePhrases(playlist) || playlist.Tracks.Count == 0)
-                return;
-
-            int cooldownMs = playlist.VoiceTriggerCooldownMs > 0
-                ? playlist.VoiceTriggerCooldownMs
-                : DefaultVoiceTriggerCooldownMs;
-
-            var now = DateTime.UtcNow;
-            if ((now - playlist.VoiceTriggerLastFireUtc).TotalMilliseconds < cooldownMs)
-                return;
-
-            playlist.VoiceTriggerLastFireUtc = now;
-
-            PlayVoiceTriggeredTrack(playlistIndex);
+                PlayScene(sceneIndex);
+            }
         }
 
         private void PlayVoiceTriggeredTrack(int playlistIndex)
@@ -1190,7 +1263,7 @@ namespace MusicPlayer
                             else
                             {
                                 string combined = $"{tb.Text}; {newGroup}";
-                                tb.Text = NormalizeAliasGroup(combined);
+                                tb.Text = NormalizeAliasGroupForDisplay(combined);
                             }
                         }
                     }
@@ -1217,7 +1290,7 @@ namespace MusicPlayer
 
                     try
                     {
-                        string group = NormalizeAliasGroup(tb.Text);
+                        string group = NormalizeLoadedAliasGroup(tb.Text);
                         if (string.IsNullOrWhiteSpace(group))
                         {
                             MessageBox.Show(
@@ -1316,7 +1389,7 @@ namespace MusicPlayer
             if (dlg.ShowDialog() != true)
                 return;
 
-            static string NormalizeAliasGroup(string? text)
+            static string NormalizeAliasGroupForDisplay(string? text)
             {
                 if (string.IsNullOrWhiteSpace(text))
                     return string.Empty;
@@ -1326,12 +1399,15 @@ namespace MusicPlayer
 
                 foreach (var raw in text.Split(';'))
                 {
-                    string normalized = VoiceTriggerService.NormalizePhrase(raw);
-                    if (string.IsNullOrWhiteSpace(normalized))
+                    string trimmed = raw?.Trim() ?? "";
+                    if (string.IsNullOrWhiteSpace(trimmed))
                         continue;
 
+                    // Use normalized version ONLY for duplicate detection
+                    string normalized = VoiceTriggerService.NormalizePhrase(trimmed);
+
                     if (seen.Add(normalized))
-                        parts.Add(normalized);
+                        parts.Add(trimmed); // <-- keep original casing
                 }
 
                 return string.Join("; ", parts);
@@ -1358,9 +1434,9 @@ namespace MusicPlayer
                 return results;
             }
 
-            string p1 = NormalizeAliasGroup(tb1.Text);
-            string p2 = NormalizeAliasGroup(tb2.Text);
-            string p3 = NormalizeAliasGroup(tb3.Text);
+            string p1 = NormalizeAliasGroupForDisplay(tb1.Text);
+            string p2 = NormalizeAliasGroupForDisplay(tb2.Text);
+            string p3 = NormalizeAliasGroupForDisplay(tb3.Text);
 
             var entered = new List<string>();
             entered.AddRange(ExpandAliasGroup(p1));

@@ -44,6 +44,7 @@ namespace MusicPlayer
         private bool _isShuttingDown = false;
         private DateTime _lastVolumePopupClosedUtc = DateTime.MinValue;
         private bool _playlistCollapsed = false;
+        private double _expandedWidth;
         private double _expandedHeight;
         private double _expandedMinHeight;
         private bool _restorePlaylistCollapsed;
@@ -52,11 +53,16 @@ namespace MusicPlayer
         private double _expandedMaxHeight;
         private string? _pendingTrackChangeSource = null;
 
+        private ContextMenu? _defaultPlaylistListContextMenu;
         private bool _sceneEnabled = false;
         private bool _sceneLaneDragActive = false;
         private int _sceneLaneDragIndex = -1;
+        private int _sceneWheelHoverLane = -1;
         private readonly double[] _sceneLaneVolumes = [1.0, 1.0, 1.0, 1.0];
         private readonly bool[] _sceneLanePlaying = new bool[4];
+        private CancellationTokenSource? _sceneMusicRampCts;
+
+
 
         private void CollapseButton_Click(object sender, RoutedEventArgs e)
         {
@@ -95,6 +101,8 @@ namespace MusicPlayer
             {
                 UpdateLayout();
 
+                _expandedWidth = Math.Max(Width, MinWidth);
+
                 if (Height > CollapsedWindowHeight + 4)
                     _expandedHeight = Height;
 
@@ -104,13 +112,15 @@ namespace MusicPlayer
 
                 CollapseButton.Content = ""; // down chevron
                 CollapseButton.ToolTip = "Expand Playlist";
-                SetGreenHighlight(CollapseButton, true);
+                CollapseButton.IsChecked = true;
 
                 PlaylistSection.Visibility = Visibility.Collapsed;
 
                 MinHeight = CollapsedWindowHeight;
                 MaxHeight = CollapsedWindowHeight;
                 ResizeMode = ResizeMode.CanMinimize;
+
+                Width = MinWidth;
 
                 if (animate)
                     AnimateWindowHeight(CollapsedWindowHeight);
@@ -126,15 +136,21 @@ namespace MusicPlayer
 
                 CollapseButton.Content = ""; // up chevron
                 CollapseButton.ToolTip = "Collapse Playlist";
-                SetGreenHighlight(CollapseButton, false);
+                CollapseButton.IsChecked = false;
 
                 MinHeight = _expandedMinHeight > 0 ? _expandedMinHeight : 200;
                 MaxHeight = _expandedMaxHeight > 0 ? _expandedMaxHeight : double.PositiveInfinity;
                 ResizeMode = _expandedResizeMode;
 
+                double targetWidth = (_expandedWidth > 0 && !double.IsNaN(_expandedWidth))
+                    ? Math.Max(_expandedWidth, MinWidth)
+                    : MinWidth;
+
                 double targetHeight = (_expandedHeight > 0 && !double.IsNaN(_expandedHeight))
                     ? _expandedHeight
                     : Math.Max(Height, ActualHeight + PlaylistSection.ActualHeight);
+
+                Width = targetWidth;
 
                 if (animate)
                     AnimateWindowHeight(targetHeight);
@@ -565,6 +581,10 @@ namespace MusicPlayer
         private object BuildPlaylistTabHeader(int playlistIndex, PlaylistState playlist)
         {
             bool hasPhrases = PlaylistHasAnyVoicePhrases(playlist);
+            bool isAmbiencePlaylist = string.Equals(
+                playlist.Name,
+                AmbiencePlaylistName,
+                StringComparison.OrdinalIgnoreCase);
 
             var root = new StackPanel
             {
@@ -576,71 +596,44 @@ namespace MusicPlayer
             {
                 Text = playlist.Name,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0)
-            };
-
-            var micButton = new Button
-            {
-                Content = new TextBlock
-                {
-                    Text = GlyphMic,
-                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                    FontSize = 12,
-                    Foreground = hasPhrases
-                        ? new SolidColorBrush(Color.FromRgb(150, 213, 150))
-                        : new SolidColorBrush(Color.FromRgb(155, 155, 155))
-                },
-                Width = 20,
-                Height = 20,
-                Padding = new Thickness(0),
-                Margin = new Thickness(0, 0, 6, 0),
-                Background = Brushes.Transparent,
-                BorderBrush = Brushes.Transparent,
-                ToolTip = hasPhrases ? "Set Key Phrases" : "Set Key Phrases"
-            };
-
-            micButton.Click += (_, e) =>
-            {
-                e.Handled = true;
-                BeginSetVoiceTriggerPhrases(playlistIndex);
-            };
-
-            var ambienceButton = new Button
-            {
-                Content = new TextBlock
-                {
-                    Text = GlyphAmbience,
-                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
-                    FontSize = 12,
-                    Foreground = playlist.IsAmbience
-                        ? new SolidColorBrush(Color.FromRgb(150, 213, 150))
-                        : new SolidColorBrush(Color.FromRgb(155, 155, 155))
-                },
-                Width = 20,
-                Height = 20,
-                Padding = new Thickness(0),
-                Margin = new Thickness(0),
-                Background = Brushes.Transparent,
-                BorderBrush = Brushes.Transparent,
-                ToolTip = playlist.IsAmbience
-                    ? "Unset Ambience Playlist"
-                    : "Set Ambience Playlist"
-            };
-
-            ambienceButton.Click += (_, e) =>
-            {
-                e.Handled = true;
-                _playlists[playlistIndex].IsAmbience = !_playlists[playlistIndex].IsAmbience;
-                BuildTabs(_activePlaylist);
-                RequestSaveState();
+                Margin = new Thickness(0, 0, 0, 0)
             };
 
             root.Children.Add(title);
-            root.Children.Add(micButton);
-            root.Children.Add(ambienceButton);
 
-            string tooltip = playlist.IsAmbience
-                ? $"{GetPlaylistVoiceStatusToolTip(playlist)} • Ambience playlist"
+            if (!isAmbiencePlaylist)
+            {
+                var micButton = new Button
+                {
+                    Content = new TextBlock
+                    {
+                        Text = GlyphMic,
+                        FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                        FontSize = 12,
+                        Foreground = hasPhrases
+                            ? new SolidColorBrush(Color.FromRgb(150, 213, 150))
+                            : new SolidColorBrush(Color.FromRgb(155, 155, 155))
+                    },
+                    Width = 20,
+                    Height = 20,
+                    Padding = new Thickness(0),
+                    Margin = new Thickness(0, 0, 0, 0),
+                    Background = Brushes.Transparent,
+                    BorderBrush = Brushes.Transparent,
+                    ToolTip = "Set Key Phrases"
+                };
+
+                micButton.Click += (_, e) =>
+                {
+                    e.Handled = true;
+                    BeginSetVoiceTriggerPhrases(playlistIndex);
+                };
+
+                root.Children.Add(micButton);
+            }
+
+            string tooltip = isAmbiencePlaylist
+                ? "Ambience Playlist"
                 : GetPlaylistVoiceStatusToolTip(playlist);
 
             ToolTipService.SetToolTip(root, tooltip);
@@ -656,8 +649,6 @@ namespace MusicPlayer
 
             public string? SortColumn { get; set; } = null;
             public ListSortDirection SortDirection { get; set; } = ListSortDirection.Ascending;
-
-            public bool IsAmbience { get; set; } = false;
 
             public bool VoiceTriggerEnabled { get; set; } = false;
             public string? VoiceTriggerPhrase1 { get; set; } = null;
@@ -708,6 +699,8 @@ namespace MusicPlayer
         public MainWindow()
         {
             InitializeComponent();
+
+            _defaultPlaylistListContextMenu = PlaylistList.ContextMenu;
 
             SceneStrip.SizeChanged += (_, __) =>
             {
@@ -794,6 +787,8 @@ namespace MusicPlayer
                 _playlists.Add(new PlaylistState { Name = "Playlist 1" });
                 _activePlaylist = 0;
             }
+
+            EnsureAmbiencePlaylistExists();
 
             // prune after we have playlists, before we build UI
             bool pruned = PruneMissingFilesFromAllPlaylists();
@@ -894,7 +889,7 @@ namespace MusicPlayer
 
                 _player.NormalizeEnabled = NormalizeToggle.IsChecked == true;
 
-                SetGreenHighlight(SceneButton, _sceneEnabled);
+                SceneButton.IsChecked = _sceneEnabled;
                 InitializeSceneStripUi();
 
                 // ✅ Ensure initial play glyph is correct
@@ -1182,7 +1177,6 @@ namespace MusicPlayer
             Closed += (_, __) =>
             {
                 _uiTimer.Stop();
-                _ctrlPollTimer.Stop();
                 _waveCts?.Cancel();
                 try { _voiceTriggerService.Dispose(); } catch { }
                 try { _sceneAudio.Dispose(); } catch { }
@@ -1389,6 +1383,14 @@ namespace MusicPlayer
 
         private int? GetAdjacentIndexByView(int delta, bool wrap = false)
         {
+            // When the Scenes tab is selected, PlaylistList contains SceneRow objects,
+            // not PlaylistRow objects. In that case, do not use the visible UI list.
+            // Instead, use the active playlist's stored sorted view.
+            if (_isScenesTabSelected)
+            {
+                return GetAdjacentIndexByStoredView(_activePlaylist, Active.Index, delta, wrap);
+            }
+
             if (PlaylistList?.ItemsSource == null)
                 return null;
 
@@ -1396,7 +1398,7 @@ namespace MusicPlayer
             if (view == null || view.IsEmpty)
                 return null;
 
-            var rows = view.Cast<PlaylistRow>().ToList();
+            var rows = view.OfType<PlaylistRow>().ToList();
             if (rows.Count == 0)
                 return null;
 
@@ -1505,12 +1507,21 @@ namespace MusicPlayer
             }
         }
 
-        private void ApplyCombinedSceneAndMasterVolumes()
+        private float GetCombinedMusicOutputVolume()
         {
             float master = (float)Math.Clamp(VolumeSlider.Value / 100.0, 0.0, 1.0);
 
             // Lane 0 = main music only
-            _player.Volume = master * (float)Math.Clamp(_sceneLaneVolumes[0], 0.0, 1.0);
+            float musicSceneVolume = _sceneEnabled
+                ? (float)Math.Clamp(_sceneLaneVolumes[0], 0.0, 1.0)
+                : 1.0f;
+
+            return master * musicSceneVolume;
+        }
+
+        private void ApplySceneAmbienceVolumesAndRefreshUi()
+        {
+            float master = (float)Math.Clamp(VolumeSlider.Value / 100.0, 0.0, 1.0);
 
             // Lanes 1..3 = ambience lanes in SceneAudioEngine
             for (int laneIndex = 1; laneIndex <= 3; laneIndex++)
@@ -1520,6 +1531,53 @@ namespace MusicPlayer
             }
 
             UpdateVolumeButtonGlyph();
+        }
+
+        private void CancelSceneMusicRamp()
+        {
+            if (_sceneMusicRampCts == null)
+                return;
+
+            try { _sceneMusicRampCts.Cancel(); } catch { }
+            try { _sceneMusicRampCts.Dispose(); } catch { }
+            _sceneMusicRampCts = null;
+        }
+
+        private async Task RampMusicOutputVolumeAsync(float targetVolume, int durationMs = 1000)
+        {
+            CancelSceneMusicRamp();
+            _sceneMusicRampCts = new CancellationTokenSource();
+            var token = _sceneMusicRampCts.Token;
+
+            float startVolume = _player.Volume;
+            const int steps = 20;
+            int delayMs = Math.Max(1, durationMs / steps);
+
+            try
+            {
+                for (int i = 1; i <= steps; i++)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    float t = (float)i / steps;
+                    _player.Volume = startVolume + ((targetVolume - startVolume) * t);
+
+                    await Task.Delay(delayMs, token);
+                }
+
+                _player.Volume = targetVolume;
+            }
+            catch (OperationCanceledException)
+            {
+                // Intentionally ignored.
+            }
+        }
+
+        private void ApplyCombinedSceneAndMasterVolumes()
+        {
+            CancelSceneMusicRamp();
+            _player.Volume = GetCombinedMusicOutputVolume();
+            ApplySceneAmbienceVolumesAndRefreshUi();
         }
 
         private void InitializeSceneStripUi()
@@ -1535,12 +1593,14 @@ namespace MusicPlayer
             SetSceneLaneVolumeVisual(3, _sceneLaneVolumes[3]);
         }
 
-        private void SceneButton_Click(object sender, RoutedEventArgs e)
+        private async void SceneButton_Click(object sender, RoutedEventArgs e)
         {
             if (_sceneEnabled)
             {
                 if (HasPlayingSceneAmbienceTracks())
                 {
+                    SceneButton.IsChecked = true;
+
                     MessageBox.Show(
                         this,
                         "Please pause or close ambient tracks before turning off Scene Mode.",
@@ -1553,16 +1613,32 @@ namespace MusicPlayer
 
                 _sceneEnabled = false;
                 SceneStrip.Visibility = Visibility.Collapsed;
-                SetGreenHighlight(SceneButton, false);
+                SceneButton.IsChecked = false;
 
                 _sceneLaneDragActive = false;
                 _sceneLaneDragIndex = -1;
+                _sceneWheelHoverLane = -1;
+                _isScenesTabSelected = false;
+                _currentSceneIndex = -1;
+
+                BuildTabs(_activePlaylist);
+                SelectPlaylist(_activePlaylist);
+
+                ApplySceneAmbienceVolumesAndRefreshUi();
+                await RampMusicOutputVolumeAsync(GetCombinedMusicOutputVolume());
                 return;
             }
 
             _sceneEnabled = true;
             SceneStrip.Visibility = Visibility.Visible;
-            SetGreenHighlight(SceneButton, true);
+            SceneButton.IsChecked = true;
+
+            BuildTabs(_activePlaylist);
+            PlaylistTabs.SelectedIndex = 0;
+            SelectScenesTab();
+
+            ApplySceneAmbienceVolumesAndRefreshUi();
+            await RampMusicOutputVolumeAsync(GetCombinedMusicOutputVolume());
         }
 
         private bool HasPlayingSceneAmbienceTracks()
@@ -1675,6 +1751,7 @@ namespace MusicPlayer
 
             SetSceneLaneVolumeVisual(laneIndex, pct);
             ApplyCombinedSceneAndMasterVolumes();
+            OnSceneLaneVolumeChanged(laneIndex, pct);
         }
 
         private void SceneLane_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1693,6 +1770,9 @@ namespace MusicPlayer
 
         private void SceneLane_MouseMove(object sender, MouseEventArgs e)
         {
+            if (sender is Grid hoverLane)
+                _sceneWheelHoverLane = Convert.ToInt32(hoverLane.Tag);
+
             if (!_sceneEnabled || !_sceneLaneDragActive)
                 return;
 
@@ -1712,6 +1792,7 @@ namespace MusicPlayer
 
             _sceneLaneDragActive = false;
             _sceneLaneDragIndex = -1;
+            _sceneWheelHoverLane = -1;
         }
 
         private static int SceneUiLaneToEngineLane(int laneIndex)
@@ -1763,6 +1844,8 @@ namespace MusicPlayer
                 _sceneAudio.StopLane(SceneUiLaneToEngineLane(laneIndex));
             }
 
+            OnSceneLaneVolumeChanged(laneIndex, _sceneLaneVolumes[laneIndex]);
+
             ApplyCombinedSceneAndMasterVolumes();
         }
 
@@ -1774,6 +1857,9 @@ namespace MusicPlayer
             _sceneLanePlaying[lane] = isPlaying;
             UpdateSceneLanePlayButton(lane);
             SetSceneLaneVolumeVisual(lane, _sceneLaneVolumes[lane]);
+
+            if (_isScenesTabSelected)
+                RefreshScenesUI();
         }
 
         private void ToggleSceneLane(int lane)
@@ -1947,6 +2033,78 @@ namespace MusicPlayer
             ShowOrUpdateVolumeToolTip();
         }
 
+        private Grid? GetSceneLaneGrid(int laneIndex)
+        {
+            return laneIndex switch
+            {
+                0 => SceneLane1,
+                1 => SceneLane2,
+                2 => SceneLane3,
+                3 => SceneLane4,
+                _ => null
+            };
+        }
+
+        private bool IsCursorOverElementScreenRect(FrameworkElement? element)
+        {
+            if (element == null || !element.IsVisible || element.ActualWidth <= 0 || element.ActualHeight <= 0)
+                return false;
+
+            try
+            {
+                var topLeft = element.PointToScreen(new Point(0, 0));
+                var bottomRight = element.PointToScreen(new Point(element.ActualWidth, element.ActualHeight));
+
+                var mouse = System.Windows.Forms.Control.MousePosition;
+
+                return mouse.X >= topLeft.X &&
+                       mouse.X <= bottomRight.X &&
+                       mouse.Y >= topLeft.Y &&
+                       mouse.Y <= bottomRight.Y;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private int GetSceneLaneUnderMouse()
+        {
+            if (!_sceneEnabled || SceneStrip.Visibility != Visibility.Visible)
+                return -1;
+
+            for (int laneIndex = 0; laneIndex <= 3; laneIndex++)
+            {
+                if (IsCursorOverElementScreenRect(GetSceneLaneGrid(laneIndex)))
+                    return laneIndex;
+            }
+
+            return -1;
+        }
+
+        private void AdjustSceneLaneVolumeFromMouseWheel(int laneIndex, MouseWheelEventArgs e)
+        {
+            if (laneIndex < 0 || laneIndex > 3)
+                return;
+
+            e.Handled = true;
+
+            double step = 0.01;
+
+            int notches = Math.Abs(e.Delta) / 120;
+            if (notches < 1)
+                notches = 1;
+
+            int effectiveNotches = notches * 3;
+
+            double delta = (e.Delta > 0 ? step : -step) * effectiveNotches;
+            double newValue = Math.Clamp(_sceneLaneVolumes[laneIndex] + delta, 0.0, 1.0);
+
+            SetSceneLaneVolumeVisual(laneIndex, newValue);
+            ApplyCombinedSceneAndMasterVolumes();
+            OnSceneLaneVolumeChanged(laneIndex, newValue);
+        }
+
         private bool IsCursorOverVolumeButtonScreenRect()
         {
             if (VolumeButton == null || !VolumeButton.IsVisible || VolumeButton.ActualWidth <= 0 || VolumeButton.ActualHeight <= 0)
@@ -1995,23 +2153,32 @@ namespace MusicPlayer
 
         private void MainWindow_GlobalPreviewMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (!IsCursorOverVolumeButtonScreenRect())
+            if (IsCursorOverVolumeButtonScreenRect())
+            {
+                AdjustVolumeFromMouseWheel(e);
                 return;
+            }
 
-            AdjustVolumeFromMouseWheel(e);
+            int sceneLane = GetSceneLaneUnderMouse();
+            if (sceneLane >= 0)
+            {
+                AdjustSceneLaneVolumeFromMouseWheel(sceneLane, e);
+            }
         }
 
         private void AdjustVolumeFromMouseWheel(MouseWheelEventArgs e)
         {
             e.Handled = true;
 
-            double step = 5.0;
+            double step = 1.0;
 
             int notches = Math.Abs(e.Delta) / 120;
             if (notches < 1)
                 notches = 1;
 
-            double delta = (e.Delta > 0 ? step : -step) * notches;
+            int effectiveNotches = notches * 3;
+
+            double delta = (e.Delta > 0 ? step : -step) * effectiveNotches;
 
             double newValue = Math.Clamp(
                 VolumeSlider.Value + delta,
@@ -2057,6 +2224,9 @@ namespace MusicPlayer
         public int SourceIndex { get; }
 
         public string DisplayName => MainWindow.CleanDisplayTitle(Path);
+        public Visibility DurationVisibility => Visibility.Visible;
+        public Visibility ScenePlayPauseVisibility => Visibility.Collapsed;
+        public string ScenePlayPauseGlyph => "";
 
         private string _albumText = "";
         public string AlbumText

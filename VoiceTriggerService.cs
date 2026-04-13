@@ -33,7 +33,7 @@ namespace MusicPlayer
         private DateTime _startedUtc = DateTime.MinValue;
 
 
-
+        public bool CaptureOnlyMode { get; set; }
         public VoiceRecognitionMode RecognitionMode { get; set; } = VoiceRecognitionMode.Command;
 
         public event Action<string>? PhraseRecognized;
@@ -146,12 +146,6 @@ namespace MusicPlayer
 
             try
             {
-                if (string.IsNullOrWhiteSpace(WhisperExePath))
-                {
-                    error = "Whisper CLI path is blank.";
-                    return false;
-                }
-
                 if (string.IsNullOrWhiteSpace(WhisperModelPath))
                 {
                     error = "Whisper model path is blank.";
@@ -182,10 +176,13 @@ namespace MusicPlayer
 
                 _audioCapture.ChunkReady -= AudioCapture_ChunkReady;
                 _audioCapture.ChunkReady += AudioCapture_ChunkReady;
-                _audioCapture.Start();
+                _audioCapture.Start(enablePeriodicExports: !CaptureOnlyMode);
 
-                _ = Task.Run(() => RunStartupProbeAsync(cts.Token));
-                _ = Task.Run(() => RunWarmupAsync(cts.Token));
+                if (!CaptureOnlyMode)
+                {
+                    _ = Task.Run(() => RunStartupProbeAsync(cts.Token));
+                    _ = Task.Run(() => RunWarmupAsync(cts.Token));
+                }
 
                 return true;
             }

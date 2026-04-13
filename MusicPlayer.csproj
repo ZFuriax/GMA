@@ -24,6 +24,8 @@
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="System.Speech" Version="10.0.5" />
     <PackageReference Include="NAudio.Vorbis" Version="*" />
+    <PackageReference Include="Whisper.net" Version="1.9.0" />
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.0" />
   </ItemGroup>
 
 </Project>

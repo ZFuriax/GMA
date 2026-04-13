@@ -7,7 +7,7 @@ namespace MusicPlayer
     public partial class MainWindow
     {
         // ---------- A-B loop behavior ----------
-        private const double LoopEpsilon = 0.002;
+        private const double LoopEpsilon = 0.003;
         private bool _abCrossfadeArmed = false;
 
         // ---------- Loop marker dragging ----------
@@ -103,14 +103,14 @@ namespace MusicPlayer
             if (b <= a + 0.0001)
                 return false;
 
-            if (progress >= (b - LoopEpsilon))
+            if (progress >= b || progress >= (b - LoopEpsilon))
             {
                 if (_xFadeMode == XFadeMode.CrossLoop)
                 {
                     if (!_abCrossfadeArmed)
                     {
                         _abCrossfadeArmed = true;
-                        LogTransport("UpdatePlaybackUI.ABLoopCrossfadeToA", $"loopA={a:0.0000} loopB={b:0.0000}");
+                        LogTransport("UpdatePlaybackUI.ABLoopCrossfadeToA", $"progress={progress:0.0000} loopA={a:0.0000} loopB={b:0.0000}");
                         _pendingTrackChangeSource = "ABLoop";
                         _player.BeginCrossfadeLoopToFraction(a);
                     }
@@ -119,7 +119,7 @@ namespace MusicPlayer
                 }
 
                 WaveformBar.Progress = a;
-                LogTransport("UpdatePlaybackUI.ABLoopHardSeekToA", $"loopA={a:0.0000} loopB={b:0.0000}");
+                LogTransport("UpdatePlaybackUI.ABLoopHardSeekToA", $"progress={progress:0.0000} loopA={a:0.0000} loopB={b:0.0000}");
                 _player.SeekFraction(a, resume: true);
                 _abCrossfadeArmed = false;
                 return true;

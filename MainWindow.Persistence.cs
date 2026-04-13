@@ -17,6 +17,7 @@ namespace MusicPlayer
         {
             public int ActivePlaylist { get; set; } = 0;
             public List<PersistedPlaylist> Playlists { get; set; } = new();
+            public List<PersistedScene> Scenes { get; set; } = new();
 
             public int RepeatMode { get; set; } = 0;
             public int XFadeMode { get; set; } = 0;
@@ -67,9 +68,23 @@ namespace MusicPlayer
             public string? VoiceTriggerPhrase3 { get; set; } = null;
             public int VoiceTriggerLastIndex { get; set; } = -1;
             public int VoiceTriggerCooldownMs { get; set; } = DefaultVoiceTriggerCooldownMs;
+        }
 
-            // 🔥 Ambience flag
-            public bool IsAmbience { get; set; } = false;
+        private sealed class PersistedScene
+        {
+            public string Name { get; set; } = "New Scene";
+            public int MusicPlaylistIndex { get; set; } = -1;
+
+            public string? KeyPhrase { get; set; } = null;
+
+            public string? Ambience1 { get; set; }
+            public string? Ambience2 { get; set; }
+            public string? Ambience3 { get; set; }
+
+            public double MusicVolume { get; set; } = 1.0;
+            public double Ambience1Volume { get; set; } = 1.0;
+            public double Ambience2Volume { get; set; } = 1.0;
+            public double Ambience3Volume { get; set; } = 1.0;
         }
 
         private static readonly JsonSerializerOptions StateJsonOptions = new()
@@ -139,7 +154,19 @@ namespace MusicPlayer
                         VoiceTriggerPhrase3 = p.VoiceTriggerPhrase3,
                         VoiceTriggerLastIndex = p.VoiceTriggerLastIndex,
                         VoiceTriggerCooldownMs = p.VoiceTriggerCooldownMs,
-                        IsAmbience = p.IsAmbience
+                    }).ToList(),
+                    Scenes = _scenes.Select(s => new PersistedScene
+                    {
+                        Name = s.Name,
+                        MusicPlaylistIndex = s.MusicPlaylistIndex,
+                        Ambience1 = s.Ambience1,
+                        Ambience2 = s.Ambience2,
+                        Ambience3 = s.Ambience3,
+                        MusicVolume = s.MusicVolume,
+                        Ambience1Volume = s.Ambience1Volume,
+                        Ambience2Volume = s.Ambience2Volume,
+                        Ambience3Volume = s.Ambience3Volume,
+                        KeyPhrase = s.KeyPhrase
                     }).ToList(),
 
                     RepeatMode = (int)_repeatMode,
@@ -166,8 +193,8 @@ namespace MusicPlayer
                     WindowWidth = bounds.Width,
                     WindowHeight = bounds.Height,
                     ExpandedWindowHeight = _playlistCollapsed
-                        ? ((_expandedHeight > 0) ? _expandedHeight : bounds.Height)
-                        : bounds.Height,
+                                        ? ((_expandedHeight > 0) ? _expandedHeight : bounds.Height)
+                                        : bounds.Height,
                     WindowState = (int)this.WindowState,
                     PlaylistCollapsed = _playlistCollapsed,
 
@@ -233,7 +260,6 @@ namespace MusicPlayer
                         VoiceTriggerCooldownMs = pl.VoiceTriggerCooldownMs > 0
                             ? pl.VoiceTriggerCooldownMs
                             : DefaultVoiceTriggerCooldownMs,
-                        IsAmbience = pl.IsAmbience
                     };
 
                     if (pl.Tracks != null && pl.Tracks.Count > 0)
@@ -247,6 +273,28 @@ namespace MusicPlayer
 
                 if (_playlists.Count == 0)
                     return false;
+
+                _scenes.Clear();
+
+                if (st.Scenes != null)
+                {
+                    foreach (var sc in st.Scenes)
+                    {
+                        _scenes.Add(new SceneDefinition
+                        {
+                            Name = string.IsNullOrWhiteSpace(sc.Name) ? "New Scene" : sc.Name.Trim(),
+                            MusicPlaylistIndex = sc.MusicPlaylistIndex,
+                            Ambience1 = sc.Ambience1,
+                            Ambience2 = sc.Ambience2,
+                            Ambience3 = sc.Ambience3,
+                            MusicVolume = Math.Clamp(sc.MusicVolume, 0.0, 1.0),
+                            Ambience1Volume = Math.Clamp(sc.Ambience1Volume, 0.0, 1.0),
+                            Ambience2Volume = Math.Clamp(sc.Ambience2Volume, 0.0, 1.0),
+                            Ambience3Volume = Math.Clamp(sc.Ambience3Volume, 0.0, 1.0),
+                            KeyPhrase = sc.KeyPhrase
+                        });
+                    }
+                }
 
                 _activePlaylist = Math.Clamp(st.ActivePlaylist, 0, _playlists.Count - 1);
 
@@ -301,8 +349,6 @@ namespace MusicPlayer
 
                 RestoreWindowPlacement(st);
 
-                _playlistCollapsed = st.PlaylistCollapsed;
-
                 _sceneEnabled = st.SceneEnabled;
 
                 if (st.SceneLaneVolumes != null && st.SceneLaneVolumes.Length == 4)
@@ -326,7 +372,9 @@ namespace MusicPlayer
 
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
-                    SetGreenHighlight(SceneButton, _sceneEnabled);
+                    CollapseButton.IsChecked = _playlistCollapsed;
+
+                    SceneButton.IsChecked = _sceneEnabled;
                     SceneStrip.Visibility = _sceneEnabled ? Visibility.Visible : Visibility.Collapsed;
 
                     for (int i = 0; i < 4; i++)

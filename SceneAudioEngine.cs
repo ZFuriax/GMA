@@ -42,7 +42,8 @@ namespace MusicPlayer
 
         private readonly object _gate = new();
         private readonly MixingSampleProvider _mixer;
-        private readonly IWavePlayer _output;
+        private IWavePlayer _output;
+        private readonly AudioDeviceManager _deviceManager;
         private readonly LaneState[] _lanes = new LaneState[LaneCount];
         private readonly Dictionary<string, float> _normalizationGainCache = new(StringComparer.OrdinalIgnoreCase);
         private bool _disposed;
@@ -54,19 +55,10 @@ namespace MusicPlayer
                 ReadFully = true
             };
 
-            try
-            {
-                _output = new WasapiOut(AudioClientShareMode.Shared, 250);
-            }
-            catch
-            {
-                _output = new WaveOutEvent
-                {
-                    DesiredLatency = 400,
-                    NumberOfBuffers = 8
-                };
-            }
+            _deviceManager = new AudioDeviceManager();
+            _deviceManager.DefaultRenderDeviceChanged += OnDefaultRenderDeviceChanged;
 
+            _output = CreateOutputForCurrentDefaultDevice();
             _output.Init(_mixer);
             _output.Play();
         }
@@ -371,6 +363,7 @@ namespace MusicPlayer
 
                 try { _output.Stop(); } catch { }
                 try { _output.Dispose(); } catch { }
+                try { _deviceManager.Dispose(); } catch { }
 
                 _disposed = true;
             }
@@ -408,6 +401,51 @@ namespace MusicPlayer
 
             var reader = new AudioFileReader(filePath);
             return new SceneSourceHandle(reader, reader);
+        }
+
+        private IWavePlayer CreateOutputForCurrentDefaultDevice()
+        {
+            try
+            {
+                using var enumerator = new MMDeviceEnumerator();
+                var dev = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+
+                return new WasapiOut(dev, AudioClientShareMode.Shared, false, 250);
+            }
+            catch
+            {
+                return new WaveOutEvent
+                {
+                    DesiredLatency = 400,
+                    NumberOfBuffers = 8
+                };
+            }
+        }
+
+        private void OnDefaultRenderDeviceChanged(string defaultDeviceId)
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                    return;
+
+                try
+                {
+                    var newOutput = CreateOutputForCurrentDefaultDevice();
+                    newOutput.Init(_mixer);
+                    newOutput.Play();
+
+                    var oldOutput = _output;
+                    _output = newOutput;
+
+                    try { oldOutput.Stop(); } catch { }
+                    try { oldOutput.Dispose(); } catch { }
+                }
+                catch
+                {
+                    // Keep the current output alive if rebind fails.
+                }
+            }
         }
 
         private sealed class LaneState

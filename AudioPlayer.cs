@@ -1381,7 +1381,16 @@ namespace MusicPlayer
             // Seeking near end should not block waiting for 1.2s that may not exist.
             if (_buffer != null && startOffset < TimeSpan.FromSeconds(1))
             {
-                PrebufferAsync(_buffer, ct)
+                TimeSpan? remainingDuration = null;
+
+                if (Duration.HasValue)
+                {
+                    remainingDuration = Duration.Value - startOffset;
+                    if (remainingDuration < TimeSpan.Zero)
+                        remainingDuration = TimeSpan.Zero;
+                }
+
+                PrebufferAsync(_buffer, remainingDuration, ct)
                     .ConfigureAwait(false)
                     .GetAwaiter()
                     .GetResult();
@@ -1729,10 +1738,23 @@ namespace MusicPlayer
             }
         }
 
-        private static async Task PrebufferAsync(BufferedWaveProvider buffer, CancellationToken ct)
+        private static async Task PrebufferAsync(
+            BufferedWaveProvider buffer,
+            TimeSpan? remainingDuration,
+            CancellationToken ct)
         {
-            // ~2.5s prebuffer improves startup stability under load
-            int targetBytes = (int)(buffer.WaveFormat.AverageBytesPerSecond * 2.5);
+            // ~2.5s prebuffer improves startup stability under load,
+            // but never wait for more audio than can actually exist.
+            double targetSeconds = 2.5;
+
+            if (remainingDuration.HasValue)
+            {
+                targetSeconds = Math.Min(
+                    targetSeconds,
+                    Math.Max(0.0, remainingDuration.Value.TotalSeconds));
+            }
+
+            int targetBytes = (int)(buffer.WaveFormat.AverageBytesPerSecond * targetSeconds);
 
             for (int i = 0; i < 400 && !ct.IsCancellationRequested; i++)
             {

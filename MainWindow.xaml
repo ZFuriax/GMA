@@ -142,7 +142,8 @@
                         <Setter Property="Template">
                                 <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type Button}">
-                                                <Border Background="{TemplateBinding Background}"
+                                                <Border x:Name="Bd"
+                                                        Background="{TemplateBinding Background}"
                                                         BorderBrush="{TemplateBinding BorderBrush}"
                                                         BorderThickness="{TemplateBinding BorderThickness}"
                                                         CornerRadius="6">
@@ -152,16 +153,20 @@
                                                 <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver"
                                                                  Value="True">
-                                                                <Setter Property="Background"
+                                                                <Setter TargetName="Bd"
+                                                                        Property="Background"
                                                                         Value="#2A2A2A"/>
-                                                                <Setter Property="BorderBrush"
+                                                                <Setter TargetName="Bd"
+                                                                        Property="BorderBrush"
                                                                         Value="#4A4A4A"/>
                                                         </Trigger>
                                                         <Trigger Property="IsPressed"
                                                                  Value="True">
-                                                                <Setter Property="Background"
+                                                                <Setter TargetName="Bd"
+                                                                        Property="Background"
                                                                         Value="#333"/>
-                                                                <Setter Property="BorderBrush"
+                                                                <Setter TargetName="Bd"
+                                                                        Property="BorderBrush"
                                                                         Value="#666"/>
                                                         </Trigger>
                                                         <Trigger Property="IsEnabled"
@@ -458,9 +463,9 @@
 
                 <Style TargetType="{x:Type ListBoxItem}">
                         <Setter Property="Padding"
-                                Value="6,4"/>
+                                Value="6,1"/>
                         <Setter Property="Margin"
-                                Value="0,1"/>
+                                Value="0"/>
                         <Setter Property="HorizontalContentAlignment"
                                 Value="Stretch"/>
                         <Setter Property="Template">
@@ -468,8 +473,11 @@
                                         <ControlTemplate TargetType="{x:Type ListBoxItem}">
                                                 <Border x:Name="Bd"
                                                         Background="Transparent"
-                                                        CornerRadius="6">
-                                                        <ContentPresenter/>
+                                                        CornerRadius="6"
+                                                        Padding="{TemplateBinding Padding}">
+                                                        <ContentPresenter
+                                                                HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                                VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                         <Trigger Property="IsMouseOver"
@@ -547,9 +555,9 @@
                         <Setter Property="BorderThickness"
                                 Value="1"/>
                         <Setter Property="Padding"
-                                Value="6,2,6,2"/>
+                                Value="3,2,3,2"/>
                         <Setter Property="Margin"
-                                Value="0,0,2,0"/>
+                                Value="0,0,0,0"/>
                         <Setter Property="Template">
                                 <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type TabItem}">
@@ -558,7 +566,8 @@
                                                         BorderBrush="{TemplateBinding BorderBrush}"
                                                         BorderThickness="{TemplateBinding BorderThickness}"
                                                         CornerRadius="6,6,0,0"
-                                                        Padding="{TemplateBinding Padding}">
+                                                        Padding="{TemplateBinding Padding}"
+                                                        SnapsToDevicePixels="True">
                                                         <ContentPresenter ContentSource="Header"
                                                                           HorizontalAlignment="Center"
                                                                           VerticalAlignment="Center"
@@ -607,6 +616,37 @@
                                                                 <Setter TargetName="Bd"
                                                                         Property="BorderBrush"
                                                                         Value="#66AA66"/>
+                                                                <Setter Property="Foreground"
+                                                                        Value="#FFFFFF"/>
+                                                        </MultiTrigger>
+
+                                                        <!-- Scenes tab outline when not selected -->
+                                                        <Trigger Property="Tag"
+                                                                 Value="Scenes">
+                                                                <Setter TargetName="Bd"
+                                                                        Property="Background"
+                                                                        Value="#000000"/>
+                                                                <Setter TargetName="Bd"
+                                                                        Property="BorderBrush"
+                                                                        Value="#AA6E3C"/>
+                                                                <Setter Property="Foreground"
+                                                                        Value="#F0D2B8"/>
+                                                        </Trigger>
+
+                                                        <!-- Selected Scenes tab -->
+                                                        <MultiTrigger>
+                                                                <MultiTrigger.Conditions>
+                                                                        <Condition Property="Tag"
+                                                                                   Value="Scenes"/>
+                                                                        <Condition Property="IsSelected"
+                                                                                   Value="True"/>
+                                                                </MultiTrigger.Conditions>
+                                                                <Setter TargetName="Bd"
+                                                                        Property="Background"
+                                                                        Value="#2A1A0E"/>
+                                                                <Setter TargetName="Bd"
+                                                                        Property="BorderBrush"
+                                                                        Value="#AA6E3C"/>
                                                                 <Setter Property="Foreground"
                                                                         Value="#FFFFFF"/>
                                                         </MultiTrigger>
@@ -671,6 +711,7 @@
                 <Style x:Key="GlyphButton"
                        TargetType="{x:Type Button}"
                        BasedOn="{StaticResource {x:Type Button}}">
+
                         <Setter Property="FontFamily"
                                 Value="Segoe MDL2 Assets"/>
                         <Setter Property="FontSize"
@@ -681,6 +722,26 @@
                                 Value="30"/>
                         <Setter Property="Padding"
                                 Value="0"/>
+                        <Setter Property="Background"
+                                Value="Transparent"/>
+                        <Setter Property="BorderBrush"
+                                Value="Transparent"/>
+
+                        <Style.Triggers>
+                                <!-- 🔥 Hover highlight -->
+                                <Trigger Property="IsMouseOver"
+                                         Value="True">
+                                        <Setter Property="Background"
+                                                Value="#22FFFFFF"/>
+                                </Trigger>
+
+                                <!-- Optional: subtle press feedback -->
+                                <Trigger Property="IsPressed"
+                                         Value="True">
+                                        <Setter Property="Background"
+                                                Value="#33FFFFFF"/>
+                                </Trigger>
+                        </Style.Triggers>
                 </Style>
 
                 <Style x:Key="GlyphToggle"
@@ -918,7 +979,7 @@
                                                         <TextBlock TextAlignment="Center">
 							<Run FontWeight="Bold">Game Master Audio</Run>
 							<LineBreak/>
-							<Run>Version 1.09</Run> <!-- Version Number -->
+							<Run>Version 1.10</Run> <!-- Version Number -->
 							<LineBreak/>
 							<Run>© Z</Run>
                                                         </TextBlock>
@@ -943,12 +1004,12 @@
                                                    HorizontalAlignment="Center"
                                                    VerticalAlignment="Center"/>
 
-                                        <Button Grid.Column="4"
-                                                x:Name="CollapseButton"
-                                                Style="{StaticResource TitleIconButton}"
-                                                Content=""
-                                                ToolTip="Collapse playlist"
-                                                Click="CollapseButton_Click"/>
+                                        <ToggleButton Grid.Column="4"
+                                                      x:Name="CollapseButton"
+                                                      Style="{StaticResource TitleIconToggleButton}"
+                                                      Content=""
+                                                      ToolTip="Collapse playlist"
+                                                      Click="CollapseButton_Click"/>
 
                                         <Button Grid.Column="5"
                                                 x:Name="MinButton"
@@ -1112,11 +1173,11 @@
                                             VerticalAlignment="Center">
 
                                         <!-- Repeat: keep same name + click handler -->
-                                        <Button x:Name="RepeatButton"
-                                                Style="{StaticResource GlyphButton}"
-                                                Content="&#xE8EE;"
-                                                ToolTip="Repeat"
-                                                Click="RepeatButton_Click"/>
+                                        <ToggleButton x:Name="RepeatButton"
+                                                      Style="{StaticResource GlyphToggle}"
+                                                      Content="&#xE8EE;"
+                                                      ToolTip="Repeat"
+                                                      Click="RepeatButton_Click"/>
 
                                         <!-- Shuffle: keep same name used by code -->
                                         <ToggleButton x:Name="ShuffleToggle"
@@ -1150,33 +1211,32 @@
                                                       Unchecked="XFadeButton_Unchecked">
                                         </ToggleButton>
 
-                                        <Button x:Name="SceneButton"
-                                                Style="{StaticResource GlyphButton}"
-                                                Content="&#xE90B;"
-                                                Click="SceneButton_Click">
+                                        <ToggleButton x:Name="SceneButton"
+                                                      Style="{StaticResource GlyphToggle}"
+                                                      Content="&#xE90B;"
+                                                      Click="SceneButton_Click">
 
-                                                <Button.ToolTip>
+                                                <ToggleButton.ToolTip>
                                                         <TextBlock TextAlignment="Left"
                                                                    TextWrapping="Wrap">
-                            <Run FontWeight="Bold">Scene Mode</Run>
-                            <LineBreak/>
-                            <Run>Allows up to four tracks to be layered together to create a scene.</Run>
-                            <LineBreak/>
-                            <Run>One music track and up to three ambience tracks can be</Run>
-                            <LineBreak/>
-                            <Run>played simultaneously, each with its own volume slider.</Run>
-                            <LineBreak/>
-                            <Run>Be sure to tag at least one playlist using the set ambience</Run>
-                            <LineBreak/>
-                            <Run>playlist button in the playlist's tab.</Run>
-                            <LineBreak/>
-                            <Run>Songs in that playlist will play in the ambience tracks area.</Run>
-                            <LineBreak/>
-                            <Run>Automatically loops the ambience tracks.</Run>
+                                                        <Run FontWeight="Bold">Scene Mode</Run>
+                                                        <LineBreak/>
+                                                        <Run>Allows up to four tracks to be layered together to create a scene.</Run>
+                                                        <LineBreak/>
+                                                        <Run>One music track and up to three ambience tracks can be</Run>
+                                                        <LineBreak/>
+                                                        <Run>played simultaneously, each with its own volume slider.</Run>
+                                                        <LineBreak/>
+                                                        <Run>Place ambience tracks in the Ambience playlist.</Run>
+                                                        <LineBreak/>
+                                                        <Run>Songs in that playlist will play in the ambience tracks area.</Run>
+                                                        <LineBreak/>
+                                                        <Run>Automatically loops the ambience tracks.</Run>
+                                                        <LineBreak/>
+                                                        <Run>Right click in the Scenes playlist to create or edit scenes.</Run>
                                                         </TextBlock>
-                                                </Button.ToolTip>
-
-                                        </Button>
+                                                </ToggleButton.ToolTip>
+                                        </ToggleButton>
                                 </StackPanel>
 
                                 <!-- Centered playback buttons (do not modify playback glyphs) -->
@@ -1555,17 +1615,18 @@
                                               TextOptions.TextFormattingMode="Display"
                                               TextOptions.TextRenderingMode="ClearType">
                                                 <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="1.5*"
-                                                                          MaxWidth="{Binding ElementName=PlaylistHeaderGrid,
-                                                    Path=ActualWidth,
-                                                    Converter={StaticResource MultiplyConverter},
-                                                    ConverterParameter=0.55}"/>
+                                                        <ColumnDefinition Width="1*"
+                                                                          MaxWidth="{Binding ElementName=PlaylistList,
+                    Path=ActualWidth,
+                    Converter={StaticResource MultiplyConverter},
+                    ConverterParameter=0.50}"/>
                                                         <ColumnDefinition Width="1*"/>
                                                         <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
 
-                                                <!-- File -->
-                                                <Button Grid.Column="0"
+                                                <!-- File / Scene -->
+                                                <Button x:Name="PlaylistHeaderPrimaryButton"
+                                                        Grid.Column="0"
                                                         Style="{StaticResource PlaylistHeaderButton}"
                                                         Content="Song"
                                                         Click="Header_File_Click"
@@ -1577,12 +1638,13 @@
                                                         Opacity="0.8"
                                                         HorizontalAlignment="Left"/>
 
-                                                <!-- Album -->
-                                                <Button Grid.Column="1"
+                                                <!-- Album / Key Phrase -->
+                                                <Button x:Name="PlaylistHeaderSecondaryButton"
+                                                        Grid.Column="1"
                                                         Style="{StaticResource PlaylistHeaderButton}"
                                                         Content="Album"
-                                                        Click="Header_Album_Click"
                                                         Padding="0"
+                                                        Click="Header_Album_Click"
                                                         Background="Transparent"
                                                         BorderThickness="0"
                                                         Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}"
@@ -1590,8 +1652,9 @@
                                                         Opacity="0.8"
                                                         HorizontalContentAlignment="Left"/>
 
-                                                <!-- Duration -->
-                                                <Button Grid.Column="2"
+                                                <!-- Duration / Play-Pause -->
+                                                <Button x:Name="PlaylistHeaderTertiaryButton"
+                                                        Grid.Column="2"
                                                         Style="{StaticResource PlaylistHeaderButton}"
                                                         Content="Duration"
                                                         Click="Header_Duration_Click"
@@ -1621,38 +1684,59 @@
 
                                                 <ListBox.ItemTemplate>
                                                         <DataTemplate>
-                                                                <Grid Margin="6,0,6,4"
+                                                                <Grid Margin="6,0,6,0"
                                                                       SnapsToDevicePixels="True">
                                                                         <Grid.ColumnDefinitions>
-                                                                                <!-- File name: shares space but capped at half -->
-                                                                                <ColumnDefinition Width="1.5*"
-                                                                                                  MaxWidth="{Binding ElementName=PlaylistHeaderGrid,
-                                     Path=ActualWidth,
-                                     Converter={StaticResource MultiplyConverter},
-                                     ConverterParameter=0.55}"/>
+                                                                                <!-- Scene/track title gets about half the row -->
+                                                                                <ColumnDefinition Width="1*"
+                                                                                                  MaxWidth="{Binding ElementName=PlaylistList,
+                    Path=ActualWidth,
+                    Converter={StaticResource MultiplyConverter},
+                    ConverterParameter=0.50}"/>
 
-                                                                                <!-- Album -->
+                                                                                <!-- Album for playlists / Key Phrase for scenes -->
                                                                                 <ColumnDefinition Width="1*"/>
 
-                                                                                <!-- Duration -->
+                                                                                <!-- Duration for playlists / tiny play-pause for scenes -->
                                                                                 <ColumnDefinition Width="Auto"/>
                                                                         </Grid.ColumnDefinitions>
 
-                                                                        <!-- File -->
+                                                                        <!-- Title -->
                                                                         <TextBlock Grid.Column="0"
                                                                                    Text="{Binding DisplayName}"
-                                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   VerticalAlignment="Center"/>
 
-                                                                        <!-- Album -->
+                                                                        <!-- Album or Key Phrase -->
                                                                         <TextBlock Grid.Column="1"
                                                                                    Text="{Binding AlbumText}"
-                                                                                   TextTrimming="CharacterEllipsis"/>
+                                                                                   TextTrimming="CharacterEllipsis"
+                                                                                   VerticalAlignment="Center"/>
 
-                                                                        <!-- Duration -->
+                                                                        <!-- Playlist duration -->
                                                                         <TextBlock Grid.Column="2"
                                                                                    Text="{Binding DurationText}"
+                                                                                   Visibility="{Binding DurationVisibility}"
                                                                                    HorizontalAlignment="Right"
-                                                                                   Margin="6,0,0,0"/>
+                                                                                   Margin="6,0,0,0"
+                                                                                   VerticalAlignment="Center"/>
+
+                                                                        <!-- Scene row play/pause -->
+                                                                        <Button Grid.Column="2"
+                                                                                Tag="{Binding Index}"
+                                                                                Click="SceneRowPlayPause_Click"
+                                                                                Visibility="{Binding ScenePlayPauseVisibility}"
+                                                                                HorizontalAlignment="Right"
+                                                                                VerticalAlignment="Center"
+                                                                                Width="22"
+                                                                                Height="22"
+                                                                                Margin="6,0,0,0"
+                                                                                Padding="0"
+                                                                                Background="Transparent"
+                                                                                BorderBrush="Transparent"
+                                                                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                                                FontFamily="Segoe MDL2 Assets"
+                                                                                Content="{Binding ScenePlayPauseGlyph}"/>
                                                                 </Grid>
                                                         </DataTemplate>
                                                 </ListBox.ItemTemplate>

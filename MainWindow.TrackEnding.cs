@@ -65,6 +65,45 @@ namespace MusicPlayer
 
             CancelWaveformInteraction();
 
+            // ----- A-B Loop Safety Net -----
+            // If loop is enabled and we reached track end without triggering the UI loop,
+            // force a loop back to A instead of advancing/stopping.
+
+            if (WaveformBar.LoopEnabled && _player.Duration.HasValue)
+            {
+                double a = Math.Clamp(WaveformBar.LoopA, 0.0, 1.0);
+                double b = Math.Clamp(WaveformBar.LoopB, 0.0, 1.0);
+
+                if (b > a + 0.0001)
+                {
+                    double progress = _player.Duration.Value.TotalSeconds <= 0
+                        ? 0
+                        : _player.Position.TotalSeconds / _player.Duration.Value.TotalSeconds;
+
+                    // If we reached or passed B (or very close to it), loop instead of ending
+                    if (progress >= b - 0.01) // slightly larger epsilon for safety
+                    {
+                        LogTransport("HandleTrackEnded.ABLoopFallback",
+                            $"progress={progress:0.0000} loopA={a:0.0000} loopB={b:0.0000}");
+
+                        _pendingTrackChangeSource = "ABLoopFallback";
+
+                        if (_xFadeMode == XFadeMode.CrossLoop)
+                        {
+                            _player.BeginCrossfadeLoopToFraction(a, CrossfadeMs);
+                        }
+                        else
+                        {
+                            _player.SeekFraction(a, resume: true);
+                        }
+
+                        _uiWantsPlaying = true;
+                        SyncPlayPauseButton();
+                        return;
+                    }
+                }
+            }
+
             // NOTE:
             // Crossfade-related PlaybackEnded suppression is handled upstream in
             // TrySuppressPlaybackEndedDuringCrossfade(...).

@@ -17,6 +17,9 @@ namespace MusicPlayer
         private void SyncPlayPauseButton()
         {
             PlayPauseButton.Content = _uiWantsPlaying ? GlyphPause : GlyphPlay;
+
+            if (_isScenesTabSelected)
+                RefreshScenesUI();
         }
 
         private int _enterPlayingStateInFlight = 0;
@@ -248,7 +251,6 @@ namespace MusicPlayer
                 _uiTimer?.Stop();
                 _saveTimer?.Stop();
                 _spectrumFadeTimer?.Stop();
-                _ctrlPollTimer?.Stop();
 
                 // Cancel background work
                 _waveCts?.Cancel();
@@ -489,7 +491,18 @@ namespace MusicPlayer
                 return;
 
             var item = ItemsControl.ContainerFromElement(PlaylistList, dep) as ListBoxItem;
-            if (item?.DataContext is not PlaylistRow row)
+            if (item == null)
+                return;
+
+            if (_isScenesTabSelected)
+            {
+                if (item.DataContext is SceneRow sceneRow)
+                    PlayScene(sceneRow.Index);
+
+                return;
+            }
+
+            if (item.DataContext is not PlaylistRow row)
                 return;
 
             if (row.SourceIndex < 0 || row.SourceIndex >= Active.Tracks.Count)
@@ -525,7 +538,10 @@ namespace MusicPlayer
 
             string path = Active.Tracks[row.SourceIndex];
 
-            if (_sceneEnabled && Active.IsAmbience)
+            bool isAmbiencePlaylist =
+                string.Equals(Active.Name, AmbiencePlaylistName, StringComparison.OrdinalIgnoreCase);
+
+            if (_sceneEnabled && isAmbiencePlaylist)
             {
                 PlayIntoScene(path);
             }

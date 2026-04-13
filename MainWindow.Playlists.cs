@@ -13,6 +13,8 @@ namespace MusicPlayer
     {
         private const string RecentlyOpenedPlaylistName = "Recently Opened";
 
+        private const string AmbiencePlaylistName = "Ambience";
+
         private void RenameActivePlaylistTo(string name)
         {
             if (_activePlaylist < 0 || _activePlaylist >= _playlists.Count)
@@ -22,9 +24,14 @@ namespace MusicPlayer
             if (string.IsNullOrWhiteSpace(trimmed))
                 return;
 
+            if (IsReservedPlaylistName(trimmed))
+            {
+                ShowReservedPlaylistNameWarning();
+                return;
+            }
+
             _playlists[_activePlaylist].Name = trimmed;
             BuildTabs(_activePlaylist);
-            PlaylistTabs.SelectedIndex = _activePlaylist;
             RequestSaveState();
         }
 
@@ -304,6 +311,13 @@ namespace MusicPlayer
 
                 PlaylistList.Focus();
             }
+            else if (_isScenesTabSelected)
+            {
+                PlaylistList.SelectedIndex = -1;
+            }
+
+            if (_isScenesTabSelected)
+                ApplyScenesContextMenu();
         }
 
         private void Window_PreviewDragOver(object sender, DragEventArgs e)
@@ -318,6 +332,27 @@ namespace MusicPlayer
                 e.Handled = true;
                 return;
             }
+        }
+
+        private static bool IsReservedPlaylistName(string? name)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                return false;
+
+            string trimmed = name.Trim();
+
+            return string.Equals(trimmed, "Scenes", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(trimmed, AmbiencePlaylistName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void ShowReservedPlaylistNameWarning()
+        {
+            MessageBox.Show(
+                this,
+                "Playlists cannot be named Scenes or Ambience.",
+                "Invalid Playlist Name",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
 
         private void Window_PreviewDrop(object sender, DragEventArgs e)
@@ -351,9 +386,13 @@ namespace MusicPlayer
             if (files.Count == 0)
                 return;
 
+            bool isAmbiencePlaylist =
+                string.Equals(Active.Name, "Ambience", StringComparison.OrdinalIgnoreCase);
+
             bool shouldAutoplay =
-                !Active.IsAmbience &&
+                !isAmbiencePlaylist &&
                 _player.PlaybackState != NAudio.Wave.PlaybackState.Playing;
+
             int targetPlaylist = _activePlaylist;
 
             Active.Tracks.AddRange(files);
@@ -390,6 +429,19 @@ namespace MusicPlayer
 
             RequestSaveState();
             e.Handled = true;
+        }
+
+
+        private int EnsureAmbiencePlaylistExists()
+        {
+            int idx = _playlists.FindIndex(p =>
+                string.Equals(p.Name, AmbiencePlaylistName, StringComparison.OrdinalIgnoreCase));
+
+            if (idx >= 0)
+                return idx;
+
+            _playlists.Add(new PlaylistState { Name = AmbiencePlaylistName });
+            return _playlists.Count - 1;
         }
 
         private void MovePlaylistItem(int fromIndex, int toIndex)

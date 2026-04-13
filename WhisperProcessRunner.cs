@@ -4,11 +4,17 @@ using System.IO;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Whisper.net;
 
 namespace MusicPlayer
 {
     internal static class WhisperProcessRunner
     {
+        private static readonly object _factoryGate = new();
+
+        private static WhisperFactory? _factory;
+        private static string? _loadedModelPath;
+
         public static async Task<string> TranscribeAsync(
             string whisperCliPath,
             string modelPath,
@@ -16,11 +22,8 @@ namespace MusicPlayer
             string language,
             CancellationToken cancellationToken)
         {
-            if (string.IsNullOrWhiteSpace(whisperCliPath))
-                throw new InvalidOperationException("Whisper CLI path is blank.");
-
-            if (!File.Exists(whisperCliPath))
-                throw new FileNotFoundException("Whisper CLI executable not found.", whisperCliPath);
+            // whisperCliPath is intentionally unused now.
+            _ = whisperCliPath;
 
             if (string.IsNullOrWhiteSpace(modelPath))
                 throw new InvalidOperationException("Whisper model path is blank.");
@@ -31,99 +34,79 @@ namespace MusicPlayer
             if (!File.Exists(wavPath))
                 throw new FileNotFoundException("Input WAV file not found.", wavPath);
 
-            string args =
-                $"-m \"{modelPath}\" " +
-                $"-f \"{wavPath}\" " +
-                $"-l {EscapeArg(language)} " +
-                "-nt";
-
             AppendWhisperRunnerLog(
-                $"{DateTime.Now:HH:mm:ss.fff} START{Environment.NewLine}" +
-                $"  EXE: {whisperCliPath}{Environment.NewLine}" +
+                $"{DateTime.Now:HH:mm:ss.fff} START (in-process){Environment.NewLine}" +
                 $"  MODEL: {modelPath}{Environment.NewLine}" +
                 $"  WAV: {wavPath}{Environment.NewLine}" +
-                $"  ARGS: {args}{Environment.NewLine}");
+                $"  LANG: {EscapeArg(language)}{Environment.NewLine}");
 
-            var psi = new ProcessStartInfo
-            {
-                FileName = whisperCliPath,
-                Arguments = args,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-                WorkingDirectory = Path.GetDirectoryName(whisperCliPath) ?? AppContext.BaseDirectory
-            };
+            WhisperFactory factory = GetOrCreateFactory(modelPath);
 
-            using var process = new Process { StartInfo = psi };
+            var transcript = new StringBuilder();
 
-            var stdOut = new StringBuilder();
-            var stdErr = new StringBuilder();
-
-            process.OutputDataReceived += (_, e) =>
-            {
-                if (e.Data != null)
-                    stdOut.AppendLine(e.Data);
-            };
-
-            process.ErrorDataReceived += (_, e) =>
-            {
-                if (e.Data != null)
-                    stdErr.AppendLine(e.Data);
-            };
-
-            if (!process.Start())
-                throw new InvalidOperationException("Failed to start whisper-cli.");
-
-            AppendWhisperRunnerLog(
-                $"{DateTime.Now:HH:mm:ss.fff} PROCESS STARTED pid={process.Id}{Environment.NewLine}");
-
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            using var fileStream = File.OpenRead(wavPath);
+            using var processor = factory.CreateBuilder()
+                .WithLanguage(EscapeArg(language))
+                .Build();
 
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(30));
 
             try
             {
-                await process.WaitForExitAsync(timeoutCts.Token);
+                await foreach (var result in processor.ProcessAsync(fileStream).WithCancellation(timeoutCts.Token))
+                {
+                    if (!string.IsNullOrWhiteSpace(result.Text))
+                    {
+                        if (transcript.Length > 0)
+                            transcript.Append(' ');
+
+                        transcript.Append(result.Text.Trim());
+                    }
+                }
             }
             catch (OperationCanceledException)
             {
+                AppendWhisperRunnerLog(
+                    $"{DateTime.Now:HH:mm:ss.fff} TIMEOUT/CANCELLED (in-process){Environment.NewLine}" +
+                    $"TEXT:{Environment.NewLine}{transcript}{Environment.NewLine}");
+
+                throw new TimeoutException(
+                    "In-process Whisper transcription did not finish within 30 seconds." + Environment.NewLine +
+                    "PARTIAL TEXT:" + Environment.NewLine + transcript);
+            }
+
+            string normalized = NormalizeTranscript(transcript.ToString());
+
+            AppendWhisperRunnerLog(
+                $"{DateTime.Now:HH:mm:ss.fff} DONE (in-process){Environment.NewLine}" +
+                $"TEXT:{Environment.NewLine}{normalized}{Environment.NewLine}");
+
+            return normalized;
+        }
+
+        private static WhisperFactory GetOrCreateFactory(string modelPath)
+        {
+            lock (_factoryGate)
+            {
+                if (_factory != null &&
+                    string.Equals(_loadedModelPath, modelPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return _factory;
+                }
+
                 try
                 {
-                    if (!process.HasExited)
-                        process.Kill(true);
+                    _factory?.Dispose();
                 }
                 catch
                 {
                 }
 
-                AppendWhisperRunnerLog(
-                    $"{DateTime.Now:HH:mm:ss.fff} TIMEOUT{Environment.NewLine}" +
-                    $"STDOUT:{Environment.NewLine}{stdOut}{Environment.NewLine}" +
-                    $"STDERR:{Environment.NewLine}{stdErr}{Environment.NewLine}");
-
-                throw new TimeoutException(
-                    "whisper-cli did not finish within 30 seconds." + Environment.NewLine +
-                    "STDOUT:" + Environment.NewLine + stdOut + Environment.NewLine +
-                    "STDERR:" + Environment.NewLine + stdErr);
+                _factory = WhisperFactory.FromPath(modelPath);
+                _loadedModelPath = modelPath;
+                return _factory;
             }
-
-            AppendWhisperRunnerLog(
-                $"{DateTime.Now:HH:mm:ss.fff} EXIT CODE {process.ExitCode}{Environment.NewLine}" +
-                $"STDOUT:{Environment.NewLine}{stdOut}{Environment.NewLine}" +
-                $"STDERR:{Environment.NewLine}{stdErr}{Environment.NewLine}");
-
-            if (process.ExitCode != 0)
-            {
-                throw new InvalidOperationException(
-                    $"whisper-cli exited with code {process.ExitCode}.{Environment.NewLine}" +
-                    $"STDOUT:{Environment.NewLine}{stdOut}{Environment.NewLine}" +
-                    $"STDERR:{Environment.NewLine}{stdErr}");
-            }
-
-            return NormalizeTranscript(stdOut.ToString());
         }
 
         [Conditional("DEBUG")]

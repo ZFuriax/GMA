@@ -21,103 +21,161 @@ namespace MusicPlayer
 
             PlaylistTabs.Items.Clear();
 
-            for (int i = 0; i < _playlists.Count; i++)
-            {
-                int idx = i;
-                var pl = _playlists[i];
+            var visiblePlaylistIndices = new List<int>();
 
-                var tab = new TabItem
+            int ambienceIndex = _playlists.FindIndex(p =>
+                string.Equals(p.Name, AmbiencePlaylistName, StringComparison.OrdinalIgnoreCase));
+
+            if (_sceneEnabled)
+            {
+                var scenesTab = new TabItem
                 {
-                    Header = BuildPlaylistTabHeader(idx, pl),
-                    Tag = idx == _playingPlaylist ? "Playing" : null,
+                    Header = ScenesTabName,
+                    Tag = "Scenes",
                     Style = (Style)FindResource("PlaylistTabItemStyle")
                 };
 
-                var ctx = new ContextMenu();
+                PlaylistTabs.Items.Add(scenesTab);
 
-                var miRename = new MenuItem { Header = "Rename" };
-                miRename.Click += (_, __) => BeginRenamePlaylist(idx);
+                if (ambienceIndex >= 0)
+                    visiblePlaylistIndices.Add(ambienceIndex);
+            }
 
-                var miSetPhrase = new MenuItem { Header = "Set Key Phrases..." };
-                miSetPhrase.Click += (_, __) => BeginSetVoiceTriggerPhrases(idx);
+            for (int i = 0; i < _playlists.Count; i++)
+            {
+                if (i == ambienceIndex)
+                    continue;
 
-                //var miSetThresholds = new MenuItem { Header = "Set Confidence Thresholds..." };
-                //miSetThresholds.Click += (_, __) => BeginSetVoiceConfidenceThresholds();
+                visiblePlaylistIndices.Add(i);
+            }
 
-                var miClearPhrase = new MenuItem
+            foreach (int playlistIndex in visiblePlaylistIndices)
+            {
+                var playlist = _playlists[playlistIndex];
+                bool isAmbiencePlaylist = string.Equals(
+                    playlist.Name,
+                    AmbiencePlaylistName,
+                    StringComparison.OrdinalIgnoreCase);
+
+                var tab = new TabItem
                 {
-                    Header = "Clear Key Phrases",
-                    IsEnabled = PlaylistHasAnyVoicePhrases(pl)
-                };
-                miClearPhrase.Click += (_, __) =>
-                {
-                    ClearVoiceTriggerPhrases(idx);
-                    BuildTabs(_activePlaylist);
-                };
-
-                var miSetAmbience = new MenuItem
-                {
-                    Header = pl.IsAmbience ? "Unset Ambience Playlist" : "Set Ambience Playlist"
-                };
-                miSetAmbience.Click += (_, __) =>
-                {
-                    _playlists[idx].IsAmbience = !_playlists[idx].IsAmbience;
-                    BuildTabs(_activePlaylist);
-                    RequestSaveState();
+                    Header = BuildPlaylistTabHeader(playlistIndex, playlist),
+                    Tag = playlistIndex == _playingPlaylist ? "Playing" : null,
+                    Style = (Style)FindResource("PlaylistTabItemStyle")
                 };
 
-                var miRemove = new MenuItem { Header = "Remove" };
-                miRemove.Click += (_, __) => RemovePlaylist(idx);
+                if (!isAmbiencePlaylist)
+                {
+                    var ctx = new ContextMenu();
 
-                ctx.Items.Add(miRename);
-                ctx.Items.Add(new Separator());
-                ctx.Items.Add(miSetPhrase);
+                    var miRename = new MenuItem { Header = "Rename" };
+                    miRename.Click += (_, __) => BeginRenamePlaylist(playlistIndex);
 
-                //ctx.Items.Add(miSetThresholds);
+                    var miSetPhrase = new MenuItem { Header = "Set Key Phrases..." };
+                    miSetPhrase.Click += (_, __) => BeginSetVoiceTriggerPhrases(playlistIndex);
 
-                ctx.Items.Add(miClearPhrase);
-                ctx.Items.Add(miSetAmbience);
-                ctx.Items.Add(new Separator());
-                ctx.Items.Add(miRemove);
+                    var miClearPhrase = new MenuItem
+                    {
+                        Header = "Clear Key Phrases",
+                        IsEnabled = PlaylistHasAnyVoicePhrases(playlist)
+                    };
+                    miClearPhrase.Click += (_, __) =>
+                    {
+                        ClearVoiceTriggerPhrases(playlistIndex);
+                        BuildTabs(_activePlaylist);
+                    };
 
-                tab.ContextMenu = ctx;
+                    var miRemove = new MenuItem { Header = "Remove" };
+                    miRemove.Click += (_, __) => RemovePlaylist(playlistIndex);
+
+                    ctx.Items.Add(miRename);
+                    ctx.Items.Add(new Separator());
+                    ctx.Items.Add(miSetPhrase);
+                    ctx.Items.Add(miClearPhrase);
+                    ctx.Items.Add(new Separator());
+                    ctx.Items.Add(miRemove);
+
+                    tab.ContextMenu = ctx;
+                }
+
                 PlaylistTabs.Items.Add(tab);
             }
 
             if (PlaylistTabs.Items.Count == 0)
                 return;
 
-            int indexToSelect =
-                preferredIndex.HasValue &&
-                preferredIndex.Value >= 0 &&
-                preferredIndex.Value < PlaylistTabs.Items.Count
-                    ? preferredIndex.Value
-                    : currentSelectedIndex >= 0 &&
-                      currentSelectedIndex < PlaylistTabs.Items.Count
-                        ? currentSelectedIndex
-                        : _activePlaylist >= 0 &&
-                          _activePlaylist < PlaylistTabs.Items.Count
-                            ? _activePlaylist
-                            : 0;
+            int targetTabIndex;
 
-            PlaylistTabs.SelectedIndex = indexToSelect;
-            _activePlaylist = indexToSelect;
+            if (preferredIndex.HasValue)
+            {
+                int preferredPlaylistIndex = preferredIndex.Value;
+
+                int visibleOffset = visiblePlaylistIndices.IndexOf(preferredPlaylistIndex);
+                if (visibleOffset >= 0)
+                    targetTabIndex = _sceneEnabled ? visibleOffset + 1 : visibleOffset;
+                else
+                    targetTabIndex = _sceneEnabled ? 1 : 0;
+            }
+            else
+            {
+                int activeVisibleOffset = visiblePlaylistIndices.IndexOf(_activePlaylist);
+                if (activeVisibleOffset >= 0)
+                    targetTabIndex = _sceneEnabled ? activeVisibleOffset + 1 : activeVisibleOffset;
+                else
+                    targetTabIndex = _sceneEnabled ? 1 : 0;
+            }
+
+            PlaylistTabs.SelectedIndex = Math.Clamp(targetTabIndex, 0, PlaylistTabs.Items.Count - 1);
             RefreshPlayingPlaylistTabHighlight();
         }
 
         private void RefreshPlayingPlaylistTabHighlight()
         {
+            int ambienceIndex = _playlists.FindIndex(p =>
+                string.Equals(p.Name, AmbiencePlaylistName, StringComparison.OrdinalIgnoreCase));
+
+            var visiblePlaylistIndices = new List<int>();
+
+            if (_sceneEnabled && ambienceIndex >= 0)
+                visiblePlaylistIndices.Add(ambienceIndex);
+
+            for (int i = 0; i < _playlists.Count; i++)
+            {
+                if (i == ambienceIndex)
+                    continue;
+
+                visiblePlaylistIndices.Add(i);
+            }
+
             for (int i = 0; i < PlaylistTabs.Items.Count; i++)
             {
-                if (PlaylistTabs.Items[i] is TabItem tab)
+                if (PlaylistTabs.Items[i] is not TabItem tab)
+                    continue;
+
+                if (_sceneEnabled && i == 0)
                 {
-                    tab.Tag = (i == _playingPlaylist) ? "Playing" : null;
+                    tab.Tag = "Scenes";
+                    continue;
+                }
+
+                int visibleOffset = _sceneEnabled ? i - 1 : i;
+                if (visibleOffset >= 0 && visibleOffset < visiblePlaylistIndices.Count)
+                {
+                    int playlistIndex = visiblePlaylistIndices[visibleOffset];
+                    tab.Tag = (playlistIndex == _playingPlaylist) ? "Playing" : null;
+                }
+                else
+                {
+                    tab.Tag = null;
                 }
             }
         }
 
         private void RemovePlaylist(int playlistIndex)
         {
+            if (string.Equals(_playlists[playlistIndex].Name, "Ambience", StringComparison.OrdinalIgnoreCase))
+                return;
+
             if (playlistIndex < 0 || playlistIndex >= _playlists.Count)
                 return;
 
@@ -182,6 +240,9 @@ namespace MusicPlayer
 
         private void BeginRenamePlaylist(int playlistIndex)
         {
+            if (string.Equals(_playlists[playlistIndex].Name, "Ambience", StringComparison.OrdinalIgnoreCase))
+                return;
+
             if (playlistIndex < 0 || playlistIndex >= _playlists.Count) return;
 
             string current = _playlists[playlistIndex].Name;
@@ -244,9 +305,22 @@ namespace MusicPlayer
                 if (string.IsNullOrWhiteSpace(name))
                     name = current;
 
+                if (IsReservedPlaylistName(name))
+                {
+                    MessageBox.Show(
+                        this,
+                        "Playlists cannot be named Scenes or Ambience.",
+                        "Invalid Playlist Name",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+
+                    tb.Focus();
+                    tb.SelectAll();
+                    return;
+                }
+
                 _playlists[playlistIndex].Name = name;
                 BuildTabs(playlistIndex);
-                PlaylistTabs.SelectedIndex = playlistIndex;
                 RequestSaveState();
             }
         }
@@ -263,19 +337,92 @@ namespace MusicPlayer
 
         private void PlaylistTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (PlaylistTabs.SelectedIndex >= 0 && PlaylistTabs.SelectedIndex < _playlists.Count)
-                SelectPlaylist(PlaylistTabs.SelectedIndex);
+            int selected = PlaylistTabs.SelectedIndex;
+
+            int ambienceIndex = _playlists.FindIndex(p =>
+                string.Equals(p.Name, AmbiencePlaylistName, StringComparison.OrdinalIgnoreCase));
+
+            var visiblePlaylistIndices = new List<int>();
+
+            if (_sceneEnabled && ambienceIndex >= 0)
+                visiblePlaylistIndices.Add(ambienceIndex);
+
+            for (int i = 0; i < _playlists.Count; i++)
+            {
+                if (i == ambienceIndex)
+                    continue;
+
+                visiblePlaylistIndices.Add(i);
+            }
+
+            if (_sceneEnabled)
+            {
+                if (selected == 0)
+                {
+                    SelectScenesTab();
+                    return;
+                }
+
+                int visibleOffset = selected - 1;
+                if (visibleOffset >= 0 && visibleOffset < visiblePlaylistIndices.Count)
+                    SelectPlaylist(visiblePlaylistIndices[visibleOffset]);
+
+                return;
+            }
+
+            if (selected >= 0 && selected < visiblePlaylistIndices.Count)
+                SelectPlaylist(visiblePlaylistIndices[selected]);
         }
 
         private void SelectPlaylist(int index)
         {
-            if (index < 0 || index >= _playlists.Count) return;
+            if (index < 0 || index >= _playlists.Count)
+                return;
 
             _activePlaylist = index;
-            PlaylistTabs.SelectedIndex = index;
+
+            int ambienceIndex = _playlists.FindIndex(p =>
+                string.Equals(p.Name, AmbiencePlaylistName, StringComparison.OrdinalIgnoreCase));
+
+            var visiblePlaylistIndices = new List<int>();
+
+            if (_sceneEnabled && ambienceIndex >= 0)
+                visiblePlaylistIndices.Add(ambienceIndex);
+
+            for (int i = 0; i < _playlists.Count; i++)
+            {
+                if (i == ambienceIndex)
+                    continue;
+
+                visiblePlaylistIndices.Add(i);
+            }
+
+            int visibleOffset = visiblePlaylistIndices.IndexOf(index);
+            int tabIndex = _sceneEnabled ? visibleOffset + 1 : visibleOffset;
+
+            if (visibleOffset >= 0 && PlaylistTabs.SelectedIndex != tabIndex)
+                PlaylistTabs.SelectedIndex = tabIndex;
 
             _currentSortColumn = Active.SortColumn;
             _currentSortDirection = Active.SortDirection;
+
+            PlaylistHeaderGrid.Visibility = Visibility.Visible;
+            _isScenesTabSelected = false;
+
+            PlaylistHeaderPrimaryButton.Content = "Song";
+            PlaylistHeaderSecondaryButton.Content = "Album";
+            PlaylistHeaderTertiaryButton.Content = "Duration";
+            PlaylistHeaderTertiaryButton.ClearValue(Control.FontFamilyProperty);
+            PlaylistHeaderTertiaryButton.Margin = new Thickness(6, 0, 0, 0);
+
+            PlaylistHeaderPrimaryButton.IsHitTestVisible = true;
+            PlaylistHeaderSecondaryButton.IsHitTestVisible = true;
+            PlaylistHeaderTertiaryButton.IsHitTestVisible = true;
+
+            if (_sceneEnabled && PlaylistTabs.Items.Count > 0 && PlaylistTabs.Items[0] is TabItem scenesTab)
+                scenesTab.Tag = "Scenes";
+
+            PlaylistList.ContextMenu = _defaultPlaylistListContextMenu;
 
             RefreshPlaylistUI();
 
@@ -434,6 +581,12 @@ namespace MusicPlayer
 
         private void PlaylistList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (_isScenesTabSelected)
+            {
+                ApplyScenesContextMenu();
+                return;
+            }
+
             // Only let selection changes move the active index when playback is truly stopped.
             // When paused, the first click of a double-click should not pre-mutate Active.Index.
             if (_player.PlaybackState != NAudio.Wave.PlaybackState.Stopped)
