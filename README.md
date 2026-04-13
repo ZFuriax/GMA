@@ -2,7 +2,7 @@
 
 Lightweight, high-performance Windows music player and scene engine built for tabletop RPG game masters.
 
-**Version:** 1.09  
+**Version:** 1.10 
 **Platform:** Windows  
 **Author:** Z  
 
