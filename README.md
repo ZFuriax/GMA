@@ -30,7 +30,7 @@ It includes everything needed to run a session:
 
 ---
 
-## What's New in 1.09
+## What's New in 1.10
 
 - Scene Mode: play up to three ambience tracks alongside a music track with independent volume control
 - Improved playback pipeline for better performance under load
